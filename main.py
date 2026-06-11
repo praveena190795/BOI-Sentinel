@@ -16,6 +16,7 @@ from langgraph.graph import StateGraph, END
 
 # Import your custom local state definitions
 from state import AnalysisState
+from dynamic_ml_node import dynamic_ml_node
 
 app = FastAPI(title="GenAI Automated Reverse Engineering Platform")
 
@@ -253,6 +254,8 @@ def generate_threat_report_node(state: AnalysisState) -> Dict[str, Any]:
     package_name = state.get("package_name")
     static_context = state.get("filtered_static_data", {})
     dynamic_context = state.get("dynamic_log_data", "")
+    ml_prediction = state.get("dynamic_ml_prediction", "Unknown")
+    ml_confidence = state.get("dynamic_ml_confidence", 0)
     
     try:
         risk_score, confidence, indicators = _calculate_metrics(static_context, dynamic_context)
@@ -263,11 +266,22 @@ def generate_threat_report_node(state: AnalysisState) -> Dict[str, Any]:
     try:
         llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.0, max_retries=3)
         
+       
         system_role = """You are "BOI Sentinel", an elite Android Malware Reverse Engineer. Create structural intelligence reports."""
+        package_name = state.get("package_name")
+        static_context = state.get("filtered_static_data", {})
+        dynamic_context = state.get("dynamic_log_data", "")
+        ml_prediction = state.get("dynamic_ml_prediction", "Unknown")
+        ml_confidence = state.get("dynamic_ml_confidence", 0)
         user_prompt = f"""
         TARGET APK UNDER ANALYSIS: {package_name}
         Calculated Risk Score: {risk_score}
         Calculated Confidence: {confidence}%
+
+        ML Malware Classification:
+        Category: {ml_prediction}
+        Confidence: {ml_confidence}%  
+
         EVIDENCE BUNDLE 1: {json.dumps(static_context)}
         EVIDENCE BUNDLE 2: {dynamic_context}
         
@@ -293,13 +307,17 @@ def generate_threat_report_node(state: AnalysisState) -> Dict[str, Any]:
 # FRAMEWORK GRAPH COMPILATION
 # =====================================================================
 
+
+workflow.add_node("dynamic_ml", dynamic_ml_node)
 workflow.add_node("sanitize_static", sanitize_static_node)
 workflow.add_node("run_dynamic", run_dynamic_analysis_node)
 workflow.add_node("generate_report", generate_threat_report_node)
 
 workflow.set_entry_point("sanitize_static")
+
 workflow.add_edge("sanitize_static", "run_dynamic")
-workflow.add_edge("run_dynamic", "generate_report")
+workflow.add_edge("run_dynamic", "dynamic_ml")
+workflow.add_edge("dynamic_ml", "generate_report")
 workflow.add_edge("generate_report", END)
 
 app_pipeline = workflow.compile()
@@ -367,7 +385,9 @@ Returning Stored Threat Intelligence Report
             "mitre_mappings": [],
             "risk_score": 0,
             "verdict_justification": "",
-            "final_report_markdown": ""
+            "final_report_markdown": "",
+            "dynamic_ml_prediction": "",
+            "dynamic_ml_confidence": 0.0,
         }
         
         final_graph_output = app_pipeline.invoke(initial_inputs)
