@@ -17,3 +17,6 @@ class AnalysisState(TypedDict):
     verdict_justification: Optional[str]
     
     final_report_markdown: str
+    dynamic_ml_prediction: Optional[str]
+dynamic_ml_confidence: Optional[float]
+detected_capabilities: Optional[List[str]]
